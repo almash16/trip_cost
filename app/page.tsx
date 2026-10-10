@@ -1,7 +1,8 @@
 "use client";
-
 import { useState } from "react";
-
+import TripMapLoader from "@/components/TripMapLoader";
+import type { MapLocation } from "@/components/TripMap";
+import TrailExplorer from "@/components/TrailsExplorer";
 type Trip = {
   from: string;
   destination: string;
@@ -10,22 +11,21 @@ type Trip = {
   travellers: string;
   style: string;
 };
-
 type Activity = {
   time: string;
   name: string;
   description: string;
   estimatedCost: number;
   travelNote: string;
+  location?: string;
+  category?: string;
 };
-
 type ItineraryDay = {
   day: number;
   title: string;
   description: string;
   activities: Activity[];
 };
-
 type BudgetBreakdown = {
   transportation: number;
   accommodation: number;
@@ -34,7 +34,6 @@ type BudgetBreakdown = {
   activities: number;
   emergencyReserve: number;
 };
-
 type TripPlan = {
   tripTitle: string;
   introduction: string;
@@ -46,7 +45,6 @@ type TripPlan = {
   practicalTips: string[];
   importantDisclaimer: string;
 };
-
 function ArrowIcon({ size = 18 }: { size?: number }) {
   return (
     <svg
@@ -64,7 +62,6 @@ function ArrowIcon({ size = 18 }: { size?: number }) {
     </svg>
   );
 }
-
 function PinIcon() {
   return (
     <svg
@@ -83,7 +80,6 @@ function PinIcon() {
     </svg>
   );
 }
-
 function CompassIcon() {
   return (
     <svg
@@ -102,7 +98,6 @@ function CompassIcon() {
     </svg>
   );
 }
-
 function ClockIcon() {
   return (
     <svg
@@ -120,7 +115,6 @@ function ClockIcon() {
     </svg>
   );
 }
-
 function LeafIcon() {
   return (
     <svg
@@ -139,7 +133,6 @@ function LeafIcon() {
     </svg>
   );
 }
-
 const destinationCards = [
   {
     number: "01",
@@ -166,7 +159,6 @@ const destinationCards = [
       "https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=900&q=85",
   },
 ];
-
 const budgetLabels: Record<keyof BudgetBreakdown, string> = {
   transportation: "Intercity travel",
   accommodation: "Accommodation",
@@ -175,11 +167,77 @@ const budgetLabels: Record<keyof BudgetBreakdown, string> = {
   activities: "Activities",
   emergencyReserve: "Emergency reserve",
 };
+function toNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+// Convert the current Gemma API response into the field names this UI renders.
+function normalizePlan(raw: any): TripPlan {
+  const sourceBudget = raw?.budgetBreakdown ?? {};
+  const budgetBreakdown: BudgetBreakdown = {
+    transportation: toNumber(sourceBudget.transportation),
+    accommodation: toNumber(sourceBudget.accommodation),
+    food: toNumber(sourceBudget.food),
+    localTransport: toNumber(sourceBudget.localTransport),
+    activities: toNumber(sourceBudget.activities),
+    emergencyReserve: toNumber(
+      sourceBudget.emergencyReserve ?? sourceBudget.miscellaneous
+    ),
+  };
+
+  const itinerary: ItineraryDay[] = Array.isArray(raw?.itinerary)
+    ? raw.itinerary.map((day: any, index: number) => ({
+        day: toNumber(day?.day, index + 1),
+        title: String(day?.title ?? `Day ${index + 1}`),
+        description: String(
+          day?.description ?? day?.summary ?? "Explore at your own pace."
+        ),
+        activities: Array.isArray(day?.activities)
+          ? day.activities.map((activity: any) => ({
+              time: String(activity?.time ?? "Flexible"),
+              name: String(
+                activity?.name ?? activity?.title ?? activity?.location ?? "Explore nearby"
+              ),
+              description: String(
+                activity?.description ?? activity?.summary ?? "Take time to explore this stop."
+              ),
+              estimatedCost: toNumber(activity?.estimatedCost),
+              travelNote: String(activity?.travelNote ?? activity?.location ?? ""),
+              location: String(
+                activity?.location ?? activity?.name ?? activity?.title ?? ""
+              ),
+              category: String(activity?.category ?? ""),
+            }))
+          : [],
+      }))
+    : [];
+
+  const calculatedBudget = Object.values(budgetBreakdown).reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
+
+  return {
+    tripTitle: String(raw?.tripTitle ?? "Your trip"),
+    introduction: String(raw?.introduction ?? "Your personalised travel plan is ready."),
+    destination: String(raw?.destination ?? ""),
+    estimatedBudget: toNumber(raw?.estimatedBudget, calculatedBudget),
+    budgetBreakdown,
+    budgetAdvice: String(raw?.budgetAdvice ?? "Check prices and availability before booking."),
+    itinerary,
+    practicalTips: Array.isArray(raw?.practicalTips)
+      ? raw.practicalTips.map((tip: unknown) => String(tip))
+      : [],
+    importantDisclaimer: String(
+      raw?.importantDisclaimer ?? "Costs and availability are estimates and should be verified."
+    ),
+  };
+}
 
 function formatINR(amount: number) {
   return `₹${Math.round(amount).toLocaleString("en-IN")}`;
 }
-
 export default function Home() {
   const [trip, setTrip] = useState<Trip>({
     from: "Ranchi",
@@ -189,32 +247,28 @@ export default function Home() {
     travellers: "2",
     style: "Balanced",
   });
-
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
+  const [mapLocations, setMapLocations] = useState<MapLocation[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState("");
   function updateTrip(field: keyof Trip, value: string) {
     setTrip((current) => ({
       ...current,
       [field]: value,
     }));
-
     setError("");
   }
-
   async function handleSubmit(
     event: React.FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
-
     if (loading) return;
-
     if (!trip.from.trim() || !trip.destination.trim()) {
       setError("Add your starting city and destination to get started.");
       return;
     }
-
     if (
       !Number.isFinite(Number(trip.days)) ||
       Number(trip.days) < 1 ||
@@ -224,11 +278,12 @@ export default function Home() {
       setError("Please enter a valid trip duration and budget.");
       return;
     }
-
     setLoading(true);
     setError("");
     setPlan(null);
-
+    setMapLocations([]);
+    setMapError("");
+    setMapLoading(false);
     try {
       const response = await fetch("/api/plan", {
         method: "POST",
@@ -237,15 +292,12 @@ export default function Home() {
         },
         body: JSON.stringify(trip),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(
           data.error || "We couldn't plan your trip. Please try again.",
         );
       }
-
       if (
         !data.plan ||
         !Array.isArray(data.plan.itinerary) ||
@@ -254,9 +306,60 @@ export default function Home() {
       ) {
         throw new Error("The AI returned an incomplete itinerary.");
       }
+      const normalizedPlan = normalizePlan(data.plan);
+      setPlan(normalizedPlan);
 
-      setPlan(data.plan);
+      // Geocode in the background so a map failure never breaks the itinerary.
+      setMapLoading(true);
+      void (async () => {
+        try {
+          const places = normalizedPlan.itinerary.flatMap((day) =>
+            day.activities.map(
+              (activity) => activity.location?.trim() || activity.name
+            )
+          );
 
+          const mapResponse = await fetch("/api/geocode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              destination: normalizedPlan.destination || trip.destination,
+              places,
+            }),
+          });
+          const mapData = await mapResponse.json();
+
+          if (!mapResponse.ok) {
+            throw new Error(mapData.error || "Could not load map locations.");
+          }
+
+          const locations: MapLocation[] = Array.isArray(mapData.locations)
+            ? mapData.locations.filter(
+                (location: unknown): location is MapLocation => {
+                  if (!location || typeof location !== "object") return false;
+                  const item = location as MapLocation;
+                  return (
+                    typeof item.name === "string" &&
+                    Number.isFinite(item.latitude) &&
+                    Number.isFinite(item.longitude)
+                  );
+                }
+              )
+            : [];
+
+          setMapLocations(locations);
+          if (locations.length === 0) {
+            setMapError("We couldn't find map coordinates for this trip.");
+          }
+        } catch (mapErr) {
+          console.error("Map loading error:", mapErr);
+          setMapError(
+            "Your itinerary is ready, but map locations could not be loaded."
+          );
+        } finally {
+          setMapLoading(false);
+        }
+      })();
       window.setTimeout(() => {
         document
           .getElementById("itinerary")
@@ -272,76 +375,61 @@ export default function Home() {
       setLoading(false);
     }
   }
-
   function selectDestination(destination: string) {
     updateTrip("destination", destination);
-
     document
       .getElementById("planner")
       ?.scrollIntoView({ behavior: "smooth" });
   }
-
   return (
     <main>
       {/* Navigation */}
-
       <header className="navbar">
         <a className="brand" href="#" aria-label="Elsewhere home">
           <span className="brand-mark">
             <CompassIcon />
           </span>
-
           <span>elsewhere</span>
           <span className="brand-period">.</span>
         </a>
-
         <nav className="nav-links" aria-label="Main navigation">
           <a href="#how-it-works">How it works</a>
           <a href="#inspiration">Find inspiration</a>
         </nav>
-
         <a className="nav-cta" href="#planner">
           Plan a trip <ArrowIcon size={15} />
         </a>
       </header>
-
       {/* Hero */}
-
       <section className="hero">
         <div className="hero-copy">
           <div className="eyebrow">
             <span className="status-dot" />
             A little help finding your way
           </div>
-
           <h1>
             Less planning.
             <br />
             <span>More being there.</span>
           </h1>
-
           <p className="hero-description">
             Tell us what you have in mind. We&apos;ll help you find the
             places, routes, and little moments that make a trip yours.
           </p>
-
           <div className="hero-actions">
             <a className="button-primary" href="#planner">
               Plan your escape <ArrowIcon />
             </a>
-
             <a className="text-link" href="#inspiration">
               Get inspired <span>↓</span>
             </a>
           </div>
-
           <div className="hero-note">
             <div className="avatar-stack" aria-hidden="true">
               <span>✳</span>
               <span>↗</span>
               <span>⌁</span>
             </div>
-
             <p>
               Your pace. Your budget.
               <br />
@@ -349,7 +437,6 @@ export default function Home() {
             </p>
           </div>
         </div>
-
         <div className="hero-visual">
           <div className="hero-image">
             <div className="image-caption">
@@ -357,12 +444,10 @@ export default function Home() {
               <span>YOUR NEXT ADVENTURE</span>
             </div>
           </div>
-
           <div className="floating-note">
             <span className="note-icon">
               <LeafIcon />
             </span>
-
             <div>
               <p className="note-label">A gentle reminder</p>
               <p className="note-title">
@@ -372,15 +457,12 @@ export default function Home() {
               </p>
             </div>
           </div>
-
           <span className="visual-decoration" aria-hidden="true">
             ✳
           </span>
         </div>
       </section>
-
       {/* Trip planner */}
-
       <section className="planner-section" id="planner">
         <div className="section-heading">
           <div>
@@ -388,18 +470,14 @@ export default function Home() {
             <h2>Where to, daydreamer?</h2>
             <p>A few details are all we need to get you started.</p>
           </div>
-
           <span className="step-indicator">01 — 04</span>
         </div>
-
         <form className="planner-card" onSubmit={handleSubmit}>
           <div className="planner-grid">
             <div className="field">
               <label htmlFor="from">STARTING FROM</label>
-
               <div className="input-wrap">
                 <PinIcon />
-
                 <input
                   id="from"
                   value={trip.from}
@@ -412,13 +490,10 @@ export default function Home() {
                 />
               </div>
             </div>
-
             <div className="field">
               <label htmlFor="destination">I WANT TO GO TO</label>
-
               <div className="input-wrap">
                 <CompassIcon />
-
                 <input
                   id="destination"
                   value={trip.destination}
@@ -431,13 +506,10 @@ export default function Home() {
                 />
               </div>
             </div>
-
             <div className="field">
               <label htmlFor="days">HOW LONG?</label>
-
               <div className="input-wrap">
                 <ClockIcon />
-
                 <select
                   id="days"
                   value={trip.days}
@@ -455,13 +527,10 @@ export default function Home() {
                 </select>
               </div>
             </div>
-
             <div className="field">
               <label htmlFor="budget">YOUR TOTAL BUDGET (INR)</label>
-
               <div className="input-wrap">
                 <span className="currency-symbol">₹</span>
-
                 <input
                   id="budget"
                   type="number"
@@ -476,15 +545,12 @@ export default function Home() {
                 />
               </div>
             </div>
-
             <div className="field">
               <label htmlFor="travellers">WHO&apos;S COMING?</label>
-
               <div className="input-wrap">
                 <span className="field-emoji" aria-hidden="true">
                   ♧
                 </span>
-
                 <select
                   id="travellers"
                   value={trip.travellers}
@@ -503,13 +569,10 @@ export default function Home() {
                 </select>
               </div>
             </div>
-
             <div className="field">
               <label htmlFor="style">YOUR TRAVEL STYLE</label>
-
               <div className="input-wrap">
                 <LeafIcon />
-
                 <select
                   id="style"
                   value={trip.style}
@@ -526,34 +589,28 @@ export default function Home() {
               </div>
             </div>
           </div>
-
           <div className="planner-footer">
             <div className="privacy-note">
               <span>✳</span>
               Made around you, never the other way around.
             </div>
-
             <button
               className="button-primary submit-button"
               type="submit"
               disabled={loading}
             >
               {loading ? "Planning your trip..." : "Build my itinerary"}
-
               {!loading && <ArrowIcon />}
             </button>
           </div>
-
           {error && (
             <p className="form-error" role="alert">
               {error}
             </p>
           )}
-
           {loading && (
             <div className="loading-panel" role="status" aria-live="polite">
               <span className="loading-spinner" />
-
               <div>
                 <strong>Putting your trip together.</strong>
                 <p>
@@ -564,9 +621,12 @@ export default function Home() {
           )}
         </form>
       </section>
+      <section className="trip-map-section">
+  <TripMapLoader />
+</section>
+
 
       {/* Destination inspiration */}
-
       <section className="inspiration-section" id="inspiration">
         <div className="section-heading inspiration-heading">
           <div>
@@ -574,12 +634,10 @@ export default function Home() {
             <h2>Somewhere feels right.</h2>
             <p>A few places worth getting out of bed for.</p>
           </div>
-
           <span className="inspiration-aside">
             A little inspiration, India.
           </span>
         </div>
-
         <div className="destination-grid">
           {destinationCards.map((destination) => (
             <button
@@ -595,21 +653,17 @@ export default function Home() {
               <span className="destination-number">
                 {destination.number}
               </span>
-
               <span className="destination-info">
                 <span className="destination-country">
                   {destination.region}
                 </span>
-
                 <span className="destination-name">
                   {destination.name}
                 </span>
-
                 <span className="destination-description">
                   {destination.description}
                 </span>
               </span>
-
               <span className="destination-arrow">
                 <ArrowIcon />
               </span>
@@ -617,46 +671,34 @@ export default function Home() {
           ))}
         </div>
       </section>
-
       {/* How it works */}
-
       <section className="philosophy-section" id="how-it-works">
         <span className="section-kicker">A BETTER WAY TO GET AWAY</span>
-
         <h2>
           The plan is important.
           <br />
           <span>The feeling is everything.</span>
         </h2>
-
         <div className="philosophy-grid">
           <article>
             <span className="philosophy-number">01</span>
-
             <h3>Tell us what matters.</h3>
-
             <p>
               Your budget, your people, your pace. Start with what you
               actually want from a trip.
             </p>
           </article>
-
           <article>
             <span className="philosophy-number">02</span>
-
             <h3>Find your own way.</h3>
-
             <p>
               Explore thoughtful itineraries, possible routes, and
               recommendations that fit your plans.
             </p>
           </article>
-
           <article>
             <span className="philosophy-number">03</span>
-
             <h3>Leave room for life.</h3>
-
             <p>
               Adjust your plans when things change. The best adventures
               aren&apos;t always the ones you expected.
@@ -664,9 +706,7 @@ export default function Home() {
           </article>
         </div>
       </section>
-
       {/* Actual AI itinerary */}
-
       {plan && (
         <section className="itinerary-section" id="itinerary">
           <div className="itinerary-top">
@@ -674,19 +714,15 @@ export default function Home() {
               <span className="section-kicker">
                 YOUR TRIP, TAKING SHAPE
               </span>
-
               <h2>{plan.tripTitle}</h2>
-
               <p className="itinerary-subtitle">
                 {trip.from} → {plan.destination} · {trip.days} days ·{" "}
                 {trip.travellers} traveller(s)
               </p>
-
               <p className="itinerary-introduction">
                 {plan.introduction}
               </p>
             </div>
-
             <button
               className="text-link"
               type="button"
@@ -699,15 +735,40 @@ export default function Home() {
               Adjust your trip ↗
             </button>
           </div>
-
           <div className="itinerary-notice">
             <span>i</span>
-
             <p>
               <strong>Before you go.</strong>{" "}
               {plan.importantDisclaimer}
             </p>
           </div>
+          <section className="trip-map-section" aria-labelledby="trip-map-heading">
+            <span className="section-kicker">YOUR JOURNEY</span>
+            <h3 id="trip-map-heading">Explore your route.</h3>
+            <p>
+              Discover the places suggested for your {plan.destination} trip.
+            </p>
+
+            {mapLoading ? (
+              <div className="loading-panel" role="status" aria-live="polite">
+                <span className="loading-spinner" />
+                <div>
+                  <strong>Finding your places.</strong>
+                  <p>Locating your destination and itinerary stops...</p>
+                </div>
+              </div>
+            ) : mapError ? (
+              <p className="form-error" role="status">{mapError}</p>
+            ) : mapLocations.length > 0 ? (
+              <>
+                <TripMapLoader locations={mapLocations} />
+                <p className="map-attribution-note">
+                  Map data © OpenStreetMap contributors. Locations are approximate;
+                  verify important stops before travelling.
+                </p>
+              </>
+            ) : null}
+          </section>
 
           <div className="itinerary-layout">
             <div className="day-list">
@@ -715,21 +776,16 @@ export default function Home() {
                 <article className="day-card" key={day.day}>
                   <div className="day-marker">
                     <span>DAY</span>
-
                     <strong>
                       {String(day.day).padStart(2, "0")}
                     </strong>
                   </div>
-
                   <div className="day-content">
                     <span className="section-kicker">
                       DAY {day.day}
                     </span>
-
                     <h3>{day.title}</h3>
-
                     <p>{day.description}</p>
-
                     <div className="activity-list">
                       {day.activities.map((activity, index) => (
                         <div
@@ -739,16 +795,12 @@ export default function Home() {
                           <span className="activity-time">
                             {activity.time}
                           </span>
-
                           <strong>{activity.name}</strong>
-
                           <p>{activity.description}</p>
-
                           <small>
                             Estimated cost:{" "}
                             {formatINR(activity.estimatedCost)}
                           </small>
-
                           {activity.travelNote && (
                             <p className="activity-travel-note">
                               {activity.travelNote}
@@ -761,20 +813,14 @@ export default function Home() {
                 </article>
               ))}
             </div>
-
             <aside className="budget-card">
               <span className="section-kicker">YOUR BUDGET</span>
-
               <p className="budget-label">Estimated trip expenses</p>
-
               <h3>{formatINR(plan.estimatedBudget)}</h3>
-
               <p className="budget-disclaimer">
                 Your entered budget: {formatINR(Number(trip.budget))}
               </p>
-
               <div className="budget-divider" />
-
               {(
                 Object.entries(plan.budgetBreakdown) as [
                   keyof BudgetBreakdown,
@@ -783,27 +829,20 @@ export default function Home() {
               ).map(([category, amount]) => (
                 <div className="budget-detail" key={category}>
                   <span>{budgetLabels[category]}</span>
-
                   <strong>{formatINR(amount)}</strong>
                 </div>
               ))}
-
               <div className="budget-divider" />
-
               <p className="budget-advice">{plan.budgetAdvice}</p>
-
               <p className="budget-disclaimer">
                 These are AI-generated estimates, not live travel prices.
                 Verify costs and availability before booking.
               </p>
             </aside>
           </div>
-
           <section className="practical-tips">
             <span className="section-kicker">BEFORE YOU GO</span>
-
             <h3>A few useful things to know.</h3>
-
             <ul>
               {plan.practicalTips.map((tip, index) => (
                 <li key={index}>{tip}</li>
@@ -811,22 +850,19 @@ export default function Home() {
             </ul>
           </section>
         </section>
+        
       )}
-
+      <TrailExplorer />
       {/* Footer */}
-
       <footer className="footer">
         <a className="brand footer-brand" href="#">
           <span className="brand-mark">
             <CompassIcon />
           </span>
-
           <span>elsewhere</span>
           <span className="brand-period">.</span>
         </a>
-
         <p>A little less planning. A little more living.</p>
-
         <span className="footer-credit">
           MADE FOR THE WAY YOU TRAVEL.
         </span>

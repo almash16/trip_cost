@@ -1194,3 +1194,169 @@ select:focus-visible {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* =================================
+   ELSEWHERE INTERACTIVE TRIP MAP
+================================= */
+
+.trip-map {
+  position: relative;
+  width: 100%;
+  height: 460px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper);
+}
+
+.trip-map-canvas {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.trip-map-notice {
+  position: absolute;
+  z-index: 500;
+  top: 14px;
+  left: 50px;
+  right: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 8%);
+}
+
+.trip-map .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+}
+
+.trip-map .leaflet-popup-content {
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.trip-map .leaflet-control-attribution {
+  font-size: 10px;
+}
+
+@media (max-width: 640px) {
+  .trip-map {
+    height: 340px;
+    border-radius: 14px;
+  }
+
+  .trip-map-notice {
+    left: 45px;
+    font-size: 11px;
+  }
+}
+
+.trip-map-section {
+  width: 100%;
+  margin: 32px 0;
+}
+
+.trip-map-section .leaflet-container {
+  width: 100%;
+  height: 450px;
+  min-height: 450px;
+  border-radius: 16px;
+  z-index: 1;
+}
+
+.map-loading {
+  width: 100%;
+  height: 450px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f0e8;
+  border-radius: 16px;
+}
+
+.trip-map-showcase {
+  margin: 32px 0;
+  overflow: hidden;
+  border: 1px solid #e8e4da;
+  border-radius: 20px;
+  background: #fffdf8;
+}
+
+.trip-map-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.trip-map-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #58745f;
+}
+
+.trip-map-heading h3 {
+  margin: 8px 0;
+  font-size: 28px;
+  font-family: Georgia, serif;
+  color: #263d30;
+}
+
+.trip-map-heading p {
+  margin: 0;
+  font-size: 14px;
+  color: #77766e;
+}
+
+.trip-map-badge {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: #e9efe8;
+  color: #315c45;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.trip-leaflet-map {
+  width: 100%;
+  height: 420px;
+  z-index: 1;
+}
+
+.trip-map-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 24px;
+  color: #77766e;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .trip-map-heading {
+    align-items: flex-start;
+    padding: 18px;
+  }
+
+  .trip-map-heading h3 {
+    font-size: 23px;
+  }
+
+  .trip-leaflet-map {
+    height: 320px;
+  }
+
+  .trip-map-footer {
+    padding: 14px 18px;
+  }
+}
